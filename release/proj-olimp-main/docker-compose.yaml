@@ -1,14 +1,6 @@
-'''version: "3.8"
-services:
-  app:
-    build:
-      context: .
-      # Имя Docker-файла из которого будет собран образ
-      dockerfile: docker
-    command: make start
-    depends_on:
-      - db
-  db:
+version: "3.8"
+
+  postgres:
     image: postgres:13.3
     container_name: databasev2
     environment:
@@ -16,4 +8,4 @@ services:
       POSTGRES_USER: "code"
       POSTGRES_PASSWORD: "1eera4wDDDe"
     ports:
-      - "5432:5432"'''
+      - "5432:5432"
