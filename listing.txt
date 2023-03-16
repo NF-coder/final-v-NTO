@@ -1,0 +1,1263 @@
+# .front.py фронтенд и подготовка входных данных для библиотек
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import modules.db_middelware as DB
+import modules.calc_portf as CP
+
+state_auth = False
+authed = False
+login = ""
+
+with open("modules/state","r",encoding="utf-8-sig") as f:
+    if f.read() == "1": authed = True
+def toggle_on():
+    with open("modules/state", "w", encoding="utf-8-sig") as f: f.write("1")
+
+
+df = pd.DataFrame(
+            np.random.randn(3, 3),
+            columns=['a', 'b', 'c'])
+if not authed:
+    tab1, tab2 = st.tabs(["Регистрация", "Авторизация"])
+
+    with tab1:
+        login = st.text_input('Введите логин:', key="logreg")
+        password1 = st.text_input('Введите пароль:', key="passreg")
+        password2 = st.text_input('Повторите пароль:')
+        if st.button('Отправить', key="sendreg") :
+            if password1 != password2:
+                st.error('Пароли не совпадают', icon=None)
+                state_auth=False
+
+            if login == '':
+                st.error('Введите логин', icon=None)
+                state_auth=False
+
+            if password1 == '' or password2 == '':
+                st.error('Введите пароль/Повторите пароль', icon=None)
+                state_auth = False
+
+            if login!="" and password1 != "" and password2 != "" and password2==password1: state_auth = True
+
+
+        if state_auth: #auth checker
+            if DB.register(login,password1):
+                authed = True
+                toggle_on()
+                st.success("Пользователь успешно зарегестрирован!", icon=None)
+                st.experimental_rerun()
+            else: st.error("Ошибка регистрации", icon=None)
+
+    with tab2:
+        login = st.text_input('Введите логин:', key="logauth")
+        pw = st.text_input('Введите пароль:', key="passauth")
+        if st.button('Отправить', key="sendauth") :
+            if login == '':
+                st.error('Введите логин', icon=None)
+                state_auth = False
+
+            if pw == '':
+                st.error('Введите пароль/Повторите пароль', icon=None)
+                state_auth = False
+
+            if login != '' and pw != '': state_auth = True
+
+        if state_auth: #auth checker
+            if DB.check_login(login, pw):
+                authed = True
+                toggle_on()
+                st.success("Вы вошли в систему!", icon=None)
+                st.experimental_rerun()
+            else: st.error("Ошибка входа", icon=None)
+
+
+if authed:
+    akc = st.text_input('Введите акции через пробел:').split()
+    var = st.radio('Выберите ориентир для поиска:', ('Риск', 'Доходность'))
+    if var=='Риск':
+        risk = st.slider('Выберите желаемый процент риска:', 0.00, 100.00, 0.01)
+    if var == 'Доходность':
+        dohod = st.slider('Выберите желаемый процент дохода:', 0.00, 100.00, 0.01)
+    opt = st.multiselect('Выберите необходимые параметры для просмотра:',
+                         ['Облако портфелей', 'Текущий курс', 'Средний портфель' ,'Портфель с максимальным коэффициентом Шарпа', 'Портфель с минимальным риском', 'Портфель с максимальным риском'])
+    start = st.button('Поиск')
+    if start:
+
+        if var == "Риск": data = CP.get_data(outers=opt, target_risk=risk/100, tickers = akc)
+        if var == "Доходность": data = CP.get_data(outers=opt, target_doh=dohod/100, tickers = akc)
+
+        if 'Целевой риск' in list(data.keys()):
+            st.header('Целевой портфель')
+            _ = data["Целевой риск"]
+            st.subheader(f"Риск: {_['риск']}")
+            st.subheader(f"Доходность: {_['доходность']}")
+            st.subheader('Доли')
+            st.dataframe(_['доли'].style.highlight_max(axis=0))
+
+            DB.portf_add(act=list(_['доли'].index), weights = _['доли']["доли, %"].values, USER=login, risk = _['риск'], doh=_['доходность'])
+
+
+        if 'Целевой доход' in list(data.keys()):
+            st.header('Целевой портфель')
+            _ = data["Целевой доход"]
+            st.subheader(f"Риск: {_['риск']}")
+            st.subheader(f"Доходность: {_['доходность']}")
+            st.subheader('Доли')
+            st.dataframe(_['доли'].style.highlight_max(axis=0))
+
+            DB.portf_add(act=list(_['доли'].index), weights = _['доли']["доли, %"].values, USER=login, risk = _['риск'], doh=_['доходность'])
+
+        if 'Облако портфелей' in opt:
+            st.title('Облако портфелей:')
+            st.image(data['Облако портфелей'])
+
+        if 'Плавающее среднее' in opt: #deactivated
+            for elem in list(data["Плавающее среднее"].keys()):
+                st.subheader(f'Плавающее среднее для {elem}')
+                st.line_chart(data["Плавающее среднее"][elem])
+
+        if 'Средний портфель' in opt:
+            st.title('Средний портфель')
+            _ = data["Средний портфель"]
+            st.subheader(f"Риск: {_['риск']}")
+            st.subheader(f"Доходность: {_['доходность']}")
+            st.subheader('Доли')
+            st.dataframe(_['доли'].style.highlight_max(axis=0))
+
+        if 'Портфель с максимальным коэффициентом Шарпа' in opt:
+            st.title('Портфель с максимальным коэффициентом Шарпа')
+            _ = data["Портфель с максимальным коэффициентом Шарпа"]
+            st.subheader(f"Риск: {_['риск']}")
+            st.subheader(f"Доходность: {_['доходность']}")
+            st.subheader('Доли')
+            st.dataframe(_['доли'].style.highlight_max(axis=0))
+
+        if 'Портфель с минимальным риском' in opt:
+            st.title('Портфель с минимальным риском')
+            _ = data["Портфель с минимальным риском"]
+            st.subheader(f"Риск: {_['риск']}")
+            st.subheader(f"Доходность: {_['доходность']}")
+            st.subheader('Доли')
+            st.dataframe(_['доли'].style.highlight_max(axis=0))
+
+        if 'Портфель с максимальным риском' in opt:
+            st.title('Портфель с максимальным риском')
+            _ = data["Портфель с максимальным риском"]
+            st.subheader(f"Риск: {_['риск']}")
+            st.subheader(f"Доходность: {_['доходность']}")
+            st.subheader('Доли')
+            st.dataframe(_['доли'].style.highlight_max(axis=0))
+                
+        if 'Текущий курс' in opt:
+            st.title('Текущий курс:')
+            _ = data["Текущий курс"]
+            l = list(_.keys())
+            for i,j in zip(st.columns(len(_)),l):
+                with i:
+                    st.metric(label=j, value=_[j][0], delta=_[j][1])
+    with st.sidebar:
+        st.header('Ваши портфели:')
+        
+        arr = DB.portf_get(USER=login)
+        names = []
+        data_names_l = []
+        for elem in arr:
+            names.append(f"{elem.portfs} Риск: {elem.risk} Доход: {elem.doh}" )
+            data_names_l = [elem.risk,elem.doh,elem.weights,elem.portfs]
+        names = tuple(names)
+
+        option = st.selectbox('Выберите параметры портфеля:', names)
+        names = list(names)
+        for i in range(len(names)):
+            elem = names[i]
+            data_names = data_names_l
+            if option == elem:
+                st.metric(label="Риск:", value=data_names[0])
+                st.metric(label="Доход", value=data_names[1])
+                weights = [i for i in list(map(float,data_names[2].split()))]
+                df = pd.DataFrame({"тикеры": data_names[3].split(),"доли, %":weights}).set_index(["тикеры"])
+
+                st.dataframe(df.style.highlight_max(axis=0))
+                break
+        logout = st.button('Выход')
+        if logout:
+            with open("modules/state", "w", encoding="utf-8-sig") as f:
+                f.write("0")
+                st.experimental_rerun()
+
+# ./modules/calc_portf.py рассчёт портфелей через взаимодействие с API
+
+import modules.libs.get_from_api as df_preprocessor
+import modules.libs.calc as df_calc
+import modules.libs.portf as portf_calc
+import modules.db_middelware as DB
+import pandas as pd
+import datetime
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+
+def get_data(outers: list,tickers: list= ["YNDX", "SBER", "VKCO"] , target_risk=None, target_doh=None, portf_count: int=10000):
+	df_main = None
+	Calc = df_calc.Calc()
+	files_lst = []
+	course = []
+
+	for elem in tickers:
+		_ = DB.act_get(elem)
+		now = datetime.datetime.now()
+		if _ == False or _.last != now.strftime("%Y-%m-%d"):
+			API = df_preprocessor.API_v2(elem)
+			df = pd.read_csv(API.preprocess(API.get_ticker()))
+			df = df.rename(columns={"CLOSE": elem})
+			df = df.drop_duplicates(subset=["DATE"],keep="last").reset_index()
+			course.append([df[elem].values[-1], df[elem].values[-1]-df[elem].values[-2]])
+			DB.act_upd(elem, df[elem].values)
+			files_lst.append(df.copy(deep=True))
+		else:
+			print("in cahe", elem)
+			df = pd.DataFrame({elem:list(map(float,_.cost.split()))})
+			course.append([df[elem].values[-1], df[elem].values[-1]-df[elem].values[-2]])
+			files_lst.append(df.copy(deep=True))
+
+	for df in files_lst:
+		if df_main is None: df_main = df
+		else: df_main = pd.concat([df,df_main],sort=False,axis=1)
+
+	try: df_main = df_main.drop(columns=["index","DATE"]) #main db processing finish
+	except: pass
+
+	mean_matrix, cov_matrix = Calc.auto_calc_spec(df_main)
+	Portf = portf_calc.Portf(mean_matrix, cov_matrix, portf_count)
+	risk,doh,portf,count_ = Portf.model()
+
+	min_risk = np.argmin(risk)
+	max_risk = np.argmax(risk)
+	maxSharpKoef = np.argmax(doh/risk)
+	r_mean = np.ones(count_)/count_
+	risk_mean = Portf.risk(r_mean)
+	doh_mean = Portf.profit(r_mean)
+	if target_risk is not None: index_target_risk = np.absolute(risk - target_risk).argmin()
+	if target_doh is not None:index_target_doh = np.absolute(doh - target_doh).argmin()
+
+	return_dict = {}
+
+	if target_risk is not None:
+		data = {
+			"риск": "%1.2f%%" % (float(risk[index_target_risk])*100.),
+			"доходность": "%1.2f%%" % (float(doh[index_target_risk])*100.),
+			"доли": pd.DataFrame([portf[index_target_risk]*100],columns=df_main.columns,index=['доли, %']).T
+		}
+		return_dict["Целевой риск"] = data
+
+	if target_doh is not None:
+		data = {
+			"риск": "%1.2f%%" % (float(risk[index_target_doh])*100.),
+			"доходность": "%1.2f%%" % (float(doh[index_target_doh])*100.),
+			"доли": pd.DataFrame([portf[index_target_doh]*100],columns=df_main.columns,index=['доли, %']).T
+		}
+		return_dict["Целевой доход"] = data
+
+	if "Средний портфель" in outers:
+		data = {
+			"риск": "%1.2f%%" % (float(risk_mean)*100.),
+			"доходность": "%1.2f%%" % (float(doh_mean)*100.),
+			"доли": pd.DataFrame([r_mean*100],columns=df_main.columns,index=['доли, %']).T
+		}
+
+		return_dict["Средний портфель"] = data
+
+	if "Портфель с максимальным коэффициентом Шарпа" in outers:
+		data = {
+			"риск": "%1.2f%%" % (float(risk[maxSharpKoef])*100.),
+			"доходность": "%1.2f%%" % (float(doh[maxSharpKoef])*100.),
+			"доли": pd.DataFrame([portf[maxSharpKoef]*100],columns=df_main.columns,index=['доли, %']).T
+		}
+
+		return_dict["Портфель с максимальным коэффициентом Шарпа"] = data
+
+	if "Портфель с минимальным риском" in outers:
+		data = {
+			"риск": "%1.2f%%" % (float(risk[min_risk])*100.),
+			"доходность": "%1.2f%%" % (float(doh[min_risk])*100.),
+			"доли": pd.DataFrame([portf[min_risk]*100],columns=df_main.columns,index=['доли, %']).T
+		}
+
+		return_dict["Портфель с минимальным риском"] = data
+
+	if "Портфель с максимальным риском" in outers:
+		data = {
+			"риск": "%1.2f%%" % (float(risk[max_risk])*100.),
+			"доходность": "%1.2f%%" % (float(doh[max_risk])*100.),
+			"доли": pd.DataFrame([portf[max_risk]*100],columns=df_main.columns,index=['доли, %']).T
+		}
+
+		return_dict["Портфель с максимальным риском"] = data
+
+	if "Облако портфелей" in outers:
+		plt.Figure(figsize=(10,8))
+		plt.scatter(risk*100,doh*100,c='y',marker='.')
+		plt.xlabel('риск, %')
+		plt.ylabel('доходность, %')
+		plt.title("Облако портфелей")
+		
+		plt.scatter([(risk[min_risk])*100],[(doh[min_risk])*100],c='r',marker='*',label='минимальный риск')
+		plt.scatter([risk[maxSharpKoef]*100],[doh[maxSharpKoef]*100],c='g',marker='o',label='максимальный коэф-т Шарпа')
+		plt.scatter([risk_mean*100],[doh_mean*100],c='b',marker='x',label='усредненный портфель')
+		
+		plt.legend()
+
+		path = "imgs/plot.jpg"
+		plt.savefig(path)
+
+		return_dict["Облако портфелей"] = path
+
+	if "Текущий курс" in outers:
+		data = {}
+		for i in range(len(tickers)):
+			elem = tickers[i]
+			data[elem] = [course[i][0],course[i][1]]
+
+		return_dict["Текущий курс"] = data
+
+	if "Плавающее среднее" in outers:
+		data = {}
+		for i in range(len(tickers)):
+			elem = tickers[i]
+			print(files_lst, elem)
+			_ = files_lst[elem].values
+			print(_)
+			data[elem] = pd.DataFrame({elem:_}).rolling(5).mean()
+
+		return_dict["Плавающее среднее"] = data
+
+	return return_dict
+
+# ./modules/db_middelware.py высокоуровневое API рассчёта портфелей
+
+import modules.bd.db as DB
+
+def check_login(login, password):
+    bd = DB.BD().login_infos()
+    for elem in bd:
+        if elem.user == login and elem.password == password: return True
+    return False
+def register(login, password):
+    bd = DB.BD().create_user(login, password)
+    return check_login(login, password)
+
+def portf_add(act, weights, USER, risk, doh):
+    bd = DB.BD().portf_add(act, weights, USER, risk, doh)
+def portf_get(USER):
+    bd = DB.BD().all_portf_get()
+    arr = []
+    for elem in bd:
+        if elem.user == USER: arr.append(elem)
+    return arr
+
+def act_get(ticker):
+    bd = DB.BD().all_act_get()
+    for elem in bd:
+        if elem.ticker == ticker: return elem
+    return False
+def act_upd(ticker, cost):
+    bd = DB.BD().all_act_get()
+    try:
+        print("in tr")
+        DB.BD().act_upd(cost, ticker)
+    except:
+        print("in exc")
+        DB.BD().act_add(cost, ticker)
+
+# ./modules/lib/portf.py низкоуровневое API рассчёта портфелей №1
+import numpy as np
+
+class Portf:
+	def __init__(self,mean_matrix,cov_matrix, portf_count):
+		self.mean_matrix = mean_matrix
+		self.cov_matrix = cov_matrix
+		self.portf_count = portf_count
+		self.count = len(list(self.mean_matrix.index))
+
+	def rand(self):
+		res = np.exp(np.random.randn(self.count))
+		res = res / res.sum()
+		return res
+
+	def profit(self,randPortf):
+		return np.matmul(self.mean_matrix.values,randPortf)
+
+	def risk(self, randPortf):
+		return np.sqrt(np.matmul(np.matmul(randPortf,self.cov_matrix.values),randPortf))
+
+	def model(self):
+		risk = np.zeros(self.portf_count)
+		doh = np.zeros(self.portf_count)
+		portf = np.zeros((self.portf_count,self.count))
+
+		for n in range(self.portf_count):
+			rand_p = self.rand()
+			profit_p = self.profit(rand_p)
+			risk_p = self.risk(rand_p)
+
+			portf[n,:] = rand_p
+			risk[n] = risk_p
+			doh[n] = profit_p
+
+		return risk,doh,portf,self.count
+
+# ./modules/lib/calc.py низкоуровневое API рассчёта портфелей №2
+import modules.libs.apimoex as apimoex
+import requests
+import pandas as pd
+
+class Calc:
+    def __init__(self):
+        pass
+
+    def change(self,df):
+        df = df.pct_change()
+        return df.drop (index=df.index [0],axis= 0)
+
+    def mean(self, df):
+        col = df.columns
+        df = df.mean()
+        df.columns = col
+        return df
+
+    def cov(self, df):
+        return df.cov()
+
+    def auto_calc_mean(self,df):
+        return self.mean(self.change(df))
+
+    def auto_calc_cov(self,df):
+        return self.cov(self.change(df))
+
+    def del_before_zero(self,df):
+        for name, cost in zip(df.index,df.values):
+            if cost<=0: df = df.drop(columns=[name])
+        return df
+
+    def auto_calc_spec(self, df):
+        mean_matrix = self.del_before_zero(self.auto_calc_mean(df))
+        cov_matrix = self.auto_calc_cov(df)
+        for col in list(set(cov_matrix.columns) - set(mean_matrix.columns)): cov_matrix = cov_matrix.drop(columns=[col])
+
+        return mean_matrix, cov_matrix
+
+# ./modules/lib/get_from_api.py высокоуровневое API взаимодействия с биржей
+import modules.libs.apimoex as apimoex
+import requests
+import pandas as pd
+import datetime
+
+class API_v2:
+	def __init__(self, name: str):
+		now = datetime.datetime.now()
+		year, month, day = now.strftime("%Y-%m-%d").split("-")
+		self.start = f"{int(year) - 1}-{month}-{day}"
+		self.name = name
+
+	def get_ticker(self):
+		with requests.Session() as session:
+			data = apimoex.get_market_history(security=self.name, session = session, market ='shares', engine ='stock')
+			df = pd.DataFrame(data)
+			#df = df.isnull().sum()
+			#print(df)
+			#df.to_csv("out.csv")
+			return df
+
+	def cleanup(self, df):
+		df.rename(index=df["TRADEDATE"], inplace=True)
+		df = df.drop(columns=["VALUE", "VOLUME", "BOARDID", "TRADEDATE"])
+		return df
+
+	def fill(self, df):
+		df['CLOSE'] = df['CLOSE'].fillna(method='ffill')
+		return df
+
+	def roll(self, df, window:int=5, col: str='CLOSE'):
+		df[col].rolling(window).mean()
+		return df
+
+	def preprocess(self,df,window:int=5):
+		df = self.cleanup(df)
+		df = self.fill(df)
+		df = self.roll(df,window)
+		df = df.truncate(before=self.start)
+		df["DATE"] = df.index
+		path = f"modules/csv_files/{self.name}.csv"
+		df.to_csv(path,index=False)
+		return path
+
+
+# ./modules/lib/apimoex/client.py низкоуровневое API взаимодействия с биржей №1
+"""Клиент для MOEX ISS."""
+from collections import abc
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Union
+
+import requests
+
+# Стандартные настройки для запроса расширенного представления json без дополнительных метаданных.
+BASE_QUERY = {"iss.json": "extended", "iss.meta": "off"}
+
+
+class ISSMoexError(Exception):
+    """Базовое исключение."""
+    pass
+
+
+class ISSClient(abc.Iterable):
+    """Клиент для MOEX ISS.
+
+    Для работы клиента необходимо передать requests.Session.
+
+    Загружает данные для простых ответов с помощью метода get. Для ответов состоящих из нескольких блоков данных
+    поддерживается протокол итерируемого для отдельных блоков или метод get_all для их автоматического сбора.
+    """
+
+    def __init__(self, session: requests.Session, url: str, query: dict = None):
+        """MOEX ISS является REST сервером.
+
+        Полный перечень запросов и параметров к ним https://iss.moex.com/iss/reference/
+        Дополнительное описание https://fs.moex.com/files/6523
+
+        :param session:
+            Сессия интернет соединения.
+        :param url:
+            Адрес запроса.
+        :param query:
+            Перечень дополнительных параметров запроса. К списку дополнительных параметров всегда добавляется
+            требование предоставить ответ в виде расширенного json без метаданных.
+        """
+        self._session = session
+        self._url = url
+        self._query = query or dict()
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(url={self._url}, query={self._query})"
+
+    def __iter__(self) -> Dict[str, List[Dict[str, Union[str, int, float]]]]:
+        """Генератор по ответам состоящим из нескольких блоков.
+
+        На часть запросов выдается только начальный блок данных (обычно из 100 элементов). Генератор обеспечивает
+        загрузку всех блоков. При этом в ответах на некоторые запросы может содержаться курсор с положением текущего
+        блока данных (позволяет сэкономить один запрос). Генератор обеспечивает обработку ответов как с курсором, так и
+        без него.
+
+        Ответ представляет словарь, каждый из ключей которого отдельная таблица с данными. Таблица представлена в виде
+        списка словарей, где каждый ключ словаря соответствует отдельному столбцу.
+        """
+        start = 0
+        while True:
+            data = self.get(start)
+            if "history.cursor" in data:
+                cursor, *wrong_data = data["history.cursor"]
+                if len(wrong_data) != 0 or cursor["INDEX"] != start:
+                    raise ISSMoexError(
+                        f"Некорректные данные history.cursor {data['history.cursor']} для начальной позиции {start}"
+                    )
+                del data["history.cursor"]
+                yield data
+                start += cursor["PAGESIZE"]
+                if start >= cursor["TOTAL"]:
+                    return
+            else:
+                # Наименование ключа может быть любым
+                key = next(iter(data))
+                block_size = len(data[key])
+                yield data
+                if not block_size:
+                    return
+                start += block_size
+
+    def get(
+        self, start: Optional[int] = None
+    ) -> Dict[str, List[Dict[str, Union[str, int, float]]]]:
+        """Загрузка данных.
+
+        :param start:
+            Номер элемента с которого нужно загрузить данные. Используется для дозагрузки данных, состоящих из
+            нескольких блоков. При отсутствии данные загружаются с начального элемента.
+        :return:
+            Блок данных с отброшенной вспомогательной информацией - словарь, каждый ключ которого
+            соответствует одной из таблиц с данными. Таблицы являются списками словарей, которые напрямую конвертируются
+            в pandas.DataFrame.
+        """
+        query = self._make_query(start)
+        with self._session.get(self._url, params=query) as respond:
+            try:
+                respond.raise_for_status()
+            except requests.HTTPError:
+                raise ISSMoexError("Неверный url", respond.url)
+            else:
+                _, data, *wrong_data = respond.json()
+        if len(wrong_data) != 0:
+            raise ISSMoexError("Ответ содержит некорректные данные", respond.url)
+        return data
+
+    def _make_query(self, start=None) -> Dict[str, Union[str, int]]:
+        """К общему набору параметров запроса добавляется требование предоставить ответ в виде расширенного json."""
+        query = dict(**BASE_QUERY, **self._query)
+        if start:
+            query["start"] = start
+        return query
+
+    def get_all(self) -> Dict[str, List[Dict[str, Union[str, int, float]]]]:
+        """Собирает все блоки данных для запросов, ответы на которые выдаются по частям отдельными блоками.
+
+        :return:
+            Объединенные из всех блоков данные с отброшенной вспомогательной информацией - словарь, каждый ключ которого
+            соответствует одной из таблиц с данными. Таблицы являются списками словарей, которые напрямую конвертируются
+            в pandas.DataFrame.
+        """
+        all_data = dict()
+        for data in self:
+            # noinspection PyUnresolvedReferences
+            for key, value in data.items():
+                all_data.setdefault(key, []).extend(value)
+        return all_data
+
+
+# ./modules/lib/apimoex/requests.py низкоуровневое API взаимодействия с биржей №2
+"""Реализация части запросов к MOEX ISS.
+
+При необходимости могут быть дополнены:
+    Полный перечень запросов https://iss.moex.com/iss/reference/
+    Дополнительное описание https://fs.moex.com/files/6523
+"""
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
+from typing import Union
+
+import requests
+
+from . import client
+
+__all__ = [
+    "get_reference",
+    "find_securities",
+    "find_security_description",
+    "get_market_candle_borders",
+    "get_board_candle_borders",
+    "get_market_candles",
+    "get_board_candles",
+    "get_board_dates",
+    "get_board_securities",
+    "get_market_history",
+    "get_board_history",
+]
+
+
+def _make_query(
+    *,
+    q: Optional[str] = None,
+    interval: Optional[int] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    table: Optional[str] = None,
+    columns: Optional[Tuple[str, ...]] = None,
+) -> Dict[str, Union[str, int]]:
+    """Формирует дополнительные параметры запроса к MOEX ISS.
+
+    В случае None значений не добавляются в запрос.
+
+    :param q:
+        Строка с частью характеристик бумаги для поиска.
+    :param interval:
+        Размер свечки.
+    :param start:
+        Начальная дата котировок.
+    :param end:
+        Конечная дата котировок.
+    :param table:
+        Таблица, которую нужно загрузить (для запросов, предполагающих наличие нескольких таблиц).
+    :param columns:
+        Кортеж столбцов, которые нужно загрузить.
+
+    :return:
+        Словарь с дополнительными параметрами запроса.
+    """
+    query = dict()
+    if q:
+        query["q"] = q
+    if interval:
+        query["interval"] = interval
+    if start:
+        query["from"] = start
+    if end:
+        query["till"] = end
+    if table:
+        query["iss.only"] = f"{table},history.cursor"
+    if columns:
+        query[f"{table}.columns"] = ",".join(columns)
+    return query
+
+
+def _get_table(data: dict, table: str) -> list:
+    """Извлекает конкретную таблицу из данных."""
+    try:
+        data = data[table]
+    except KeyError:
+        raise client.ISSMoexError(f"Отсутствует таблица {table} в данных")
+    return data
+
+
+def _get_short_data(
+    session: requests.Session, url: str, table: str, query: Optional[dict] = None
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Получить данные для запроса с выдачей всей информации за раз.
+
+    :param session:
+        Сессия интернет соединения.
+    :param url:
+        URL запроса.
+    :param table:
+        Таблица, которую нужно выбрать.
+    :param query:
+        Дополнительные параметры запроса.
+
+    :return:
+        Конкретная таблица из запроса.
+    """
+    iss = client.ISSClient(session, url, query)
+    data = iss.get()
+    return _get_table(data, table)
+
+
+def _get_long_data(
+    session: requests.Session, url, table, query=None
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Получить данные для запроса, в котором информация выдается несколькими блоками.
+
+    :param session:
+        Сессия интернет соединения.
+    :param url:
+        URL запроса.
+    :param table:
+        Таблица, которую нужно выбрать.
+    :param query:
+        Дополнительные параметры запроса.
+
+    :return:
+        Конкретная таблица из запроса.
+    """
+    iss = client.ISSClient(session, url, query)
+    data = iss.get_all()
+    return _get_table(data, table)
+
+
+def get_reference(
+    session: requests.Session, placeholder: str = "boards"
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Получить перечень доступных значений плейсхолдера в адресе запроса.
+
+    Например в описание запроса https://iss.moex.com/iss/reference/32 присутствует следующий адрес
+    /iss/engines/[engine]/markets/[market]/boards/[board]/securities с плейсхолдерами engines, markets и boards.
+
+    Описание запроса - https://iss.moex.com/iss/reference/28
+
+    :param session:
+        Сессия интернет соединения.
+    :param placeholder:
+        Наименование плейсхолдера в адресе запроса: engines, markets, boards, boardgroups, durations, securitytypes,
+        securitygroups, securitycollections
+
+    :return:
+        Список словарей, которые напрямую конвертируется в pandas.DataFrame.
+    """
+    url = "https://iss.moex.com/iss/index.json"
+    return _get_short_data(session, url, placeholder)
+
+
+def find_securities(
+    session: requests.Session,
+    string: str,
+    columns: Optional[Tuple[str, ...]] = ("secid", "regnumber"),
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Найти инструменты по части Кода, Названию, ISIN, Идентификатору Эмитента, Номеру гос.регистрации.
+
+    Один из вариантов использования - по регистрационному номеру узнать предыдущие тикеры эмитента, и с помощью
+    нескольких запросов об истории котировок собрать длинную историю с использованием всех предыдущих тикеров.
+
+    Описание запроса - https://iss.moex.com/iss/reference/5
+
+    :param session:
+        Сессия интернет соединения.
+    :param string:
+        Часть Кода, Названия, ISIN, Идентификатора Эмитента, Номера гос.регистрации.
+    :param columns:
+        Кортеж столбцов, которые нужно загрузить - по умолчанию тикер и номер государственно регистрации.
+        Если пустой или None, то загружаются все столбцы.
+
+    :return:
+        Список словарей, которые напрямую конвертируется в pandas.DataFrame.
+    """
+    url = "https://iss.moex.com/iss/securities.json"
+    table = "securities"
+    query = _make_query(q=string, table=table, columns=columns)
+    return _get_short_data(session, url, table, query)
+
+
+def find_security_description(
+    session: requests.Session,
+    security: str,
+    columns: Optional[Tuple[str, ...]] = ("name", "title", "value"),
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Получить спецификацию инструмента.
+
+    Один из вариантов использования - по тикеру узнать дату начала торгов.
+
+    Описание запроса - https://iss.moex.com/iss/reference/13
+
+    :param session:
+        Сессия интернет соединения.
+    :param security:
+        Тикер ценной бумаги.
+    :param columns:
+        Кортеж столбцов, которые нужно загрузить - по умолчанию краткое название, длинное название на русском и значение
+        показателя.
+
+    :return:
+        Список словарей, которые напрямую конвертируется в pandas.DataFrame.
+    """
+    url = f"https://iss.moex.com/iss/securities/{security}.json"
+    table = "description"
+    query = _make_query(table=table, columns=columns)
+    return _get_short_data(session, url, table, query)
+
+
+def get_market_candle_borders(
+    session: requests.Session,
+    security: str,
+    market: str = "shares",
+    engine: str = "stock",
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Получить таблицу интервалов доступных дат для свечей различного размера на рынке для всех режимов торгов.
+
+    Описание запроса - https://iss.moex.com/iss/reference/156
+
+    :param session:
+        Сессия интернет соединения.
+    :param security:
+        Тикер ценной бумаги.
+    :param market:
+        Рынок - по умолчанию акции.
+    :param engine:
+        Движок - по умолчанию акции.
+
+    :return:
+        Список словарей, которые напрямую конвертируется в pandas.DataFrame.
+    """
+    url = f"https://iss.moex.com/iss/engines/{engine}/markets/{market}/securities/{security}/candleborders.json"
+    table = "borders"
+    return _get_short_data(session, url, table)
+
+
+def get_board_candle_borders(
+    session: requests.Session,
+    security: str,
+    board: str = "TQBR",
+    market: str = "shares",
+    engine: str = "stock",
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Получить таблицу интервалов доступных дат для свечей различного размера в указанном режиме торгов.
+
+    Описание запроса - https://iss.moex.com/iss/reference/48
+
+    :param session:
+        Сессия интернет соединения.
+    :param security:
+        Тикер ценной бумаги.
+    :param board:
+        Режим торгов - по умолчанию основной режим торгов T+2.
+    :param market:
+        Рынок - по умолчанию акции.
+    :param engine:
+        Движок - по умолчанию акции.
+
+    :return:
+        Список словарей, которые напрямую конвертируется в pandas.DataFrame.
+    """
+    url = (
+        f"https://iss.moex.com/iss/engines/{engine}/markets/{market}/"
+        f"boards/{board}/securities/{security}/candleborders.json"
+    )
+    table = "borders"
+    return _get_short_data(session, url, table)
+
+
+def get_market_candles(
+    session: requests.Session,
+    security: str,
+    interval: int = 24,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    columns: Optional[Tuple[str, ...]] = (
+            "begin",
+            "open",
+            "close",
+            "high",
+            "low",
+            "value",
+    ),
+    market: str = "shares",
+    engine: str = "stock",
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Получить свечи в формате HLOCV указанного инструмента на рынке для основного режима торгов за интервал дат.
+
+    Если торговля идет в нескольких основных режимах, то на один интервал времени может быть выдано несколько свечек -
+    по свечке на каждый режим. Предположительно такая ситуация может произойти для свечек длиннее 1 дня в периоды, когда
+    менялся режим торгов.
+
+    Описание запроса - https://iss.moex.com/iss/reference/155
+
+    :param session:
+        Сессия интернет соединения.
+    :param security:
+        Тикер ценной бумаги.
+    :param interval:
+        Размер свечки - целое число 1 (1 минута), 10 (10 минут), 60 (1 час), 24 (1 день), 7 (1 неделя), 31 (1 месяц) или
+        4 (1 квартал). По умолчанию дневные данные.
+    :param start:
+        Дата вида ГГГГ-ММ-ДД. При отсутствии данные будут загружены с начала истории.
+    :param end:
+        Дата вида ГГГГ-ММ-ДД. При отсутствии данные будут загружены до конца истории. Для текущего дня будут
+        загружены не окончательные данные, если торги продолжаются.
+    :param columns:
+        Кортеж столбцов, которые нужно загрузить - по умолчанию момент начала свечки и HLOCV. Если пустой или None, то
+        загружаются все столбцы.
+    :param market:
+        Рынок - по умолчанию акции.
+    :param engine:
+        Движок - по умолчанию акции.
+
+    :return:
+        Список словарей, которые напрямую конвертируется в pandas.DataFrame.
+    """
+    url = f"https://iss.moex.com/iss/engines/{engine}/markets/{market}/securities/{security}/candles.json"
+    table = "candles"
+    query = _make_query(interval=interval, start=start, end=end, table=table, columns=columns)
+    return _get_long_data(session, url, table, query)
+
+
+def get_board_candles(
+    session: requests.Session,
+    security: str,
+    interval: int = 24,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    columns: Optional[Tuple[str, ...]] = (
+            "begin",
+            "open",
+            "close",
+            "high",
+            "low",
+            "value",
+    ),
+    board: str = "TQBR",
+    market: str = "shares",
+    engine: str = "stock",
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Получить свечи в формате HLOCV указанного инструмента в указанном режиме торгов за интервал дат.
+
+    Описание запроса - https://iss.moex.com/iss/reference/46
+
+    :param session:
+        Сессия интернет соединения.
+    :param security:
+        Тикер ценной бумаги.
+    :param interval:
+        Размер свечки - целое число 1 (1 минута), 10 (10 минут), 60 (1 час), 24 (1 день), 7 (1 неделя), 31 (1 месяц) или
+        4 (1 квартал). По умолчанию дневные данные.
+    :param start:
+        Дата вида ГГГГ-ММ-ДД. При отсутствии данные будут загружены с начала истории.
+    :param end:
+        Дата вида ГГГГ-ММ-ДД. При отсутствии данные будут загружены до конца истории. Для текущего дня будут
+        загружены не окончательные данные, если торги продолжаются.
+    :param columns:
+        Кортеж столбцов, которые нужно загрузить - по умолчанию момент начала свечки и HLOCV. Если пустой или None, то
+        загружаются все столбцы.
+    :param board:
+        Режим торгов - по умолчанию основной режим торгов T+2.
+    :param market:
+        Рынок - по умолчанию акции.
+    :param engine:
+        Движок - по умолчанию акции.
+
+    :return:
+        Список словарей, которые напрямую конвертируется в pandas.DataFrame.
+    """
+    url = (
+        f"https://iss.moex.com/iss/engines/{engine}/markets/{market}/"
+        f"boards/{board}/securities/{security}/candles.json"
+    )
+    table = "candles"
+    query = _make_query(interval=interval, start=start, end=end, table=table, columns=columns)
+    return _get_long_data(session, url, table, query)
+
+
+def get_board_dates(
+    session: requests.Session,
+    board: str = "TQBR",
+    market: str = "shares",
+    engine: str = "stock",
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Получить интервал дат, доступных в истории для рынка по заданному режиму торгов.
+
+    Описание запроса - https://iss.moex.com/iss/reference/26
+
+    :param session:
+        Сессия интернет соединения.
+    :param board:
+        Режим торгов - по умолчанию основной режим торгов T+2.
+    :param market:
+        Рынок - по умолчанию акции.
+    :param engine:
+        Движок - по умолчанию акции.
+
+    :return:
+        Список из одного элемента - словаря с ключами 'from' и 'till'.
+    """
+    url = f"https://iss.moex.com/iss/history/engines/{engine}/markets/{market}/boards/{board}/dates.json"
+    table = "dates"
+    return _get_short_data(session, url, table)
+
+
+def get_board_securities(
+    session: requests.Session,
+    table: str = "securities",
+    columns: Optional[Tuple[str, ...]] = ("SECID", "REGNUMBER", "LOTSIZE", "SHORTNAME"),
+    board: str = "TQBR",
+    market: str = "shares",
+    engine: str = "stock",
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Получить таблицу инструментов по режиму торгов со вспомогательной информацией.
+
+    Описание запроса - https://iss.moex.com/iss/reference/32
+
+    :param session:
+        Сессия интернет соединения.
+    :param table:
+        Таблица с данными, которую нужно вернуть: securities - справочник торгуемых ценных бумаг, marketdata -
+        данные с результатами торгов текущего дня.
+    :param columns:
+        Кортеж столбцов, которые нужно загрузить - по умолчанию тикер, номер государственно регистрации,
+        размер лота и краткое название. Если пустой или None, то загружаются все столбцы.
+    :param board:
+        Режим торгов - по умолчанию основной режим торгов T+2.
+    :param market:
+        Рынок - по умолчанию акции.
+    :param engine:
+        Движок - по умолчанию акции.
+
+    :return:
+        Список словарей, которые напрямую конвертируется в pandas.DataFrame.
+    """
+    url = f"https://iss.moex.com/iss/engines/{engine}/markets/{market}/boards/{board}/securities.json"
+    query = _make_query(table=table, columns=columns)
+    return _get_short_data(session, url, table, query)
+
+
+def get_market_history(
+    session: requests.Session,
+    security: str,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    columns: Optional[Tuple[str, ...]] = (
+        "BOARDID",
+        "TRADEDATE",
+        "CLOSE",
+        "VOLUME",
+        "VALUE",
+    ),
+    market: str = "shares",
+    engine: str = "stock",
+) -> List[Dict[str, Union[str, int, float]]]:
+    """Получить историю по одной бумаге на рынке для всех режимов торгов за интервал дат.
+
+    На одну дату может приходиться несколько значений, если торги шли в нескольких режимах.
+
+    Описание запроса - https://iss.moex.com/iss/reference/63
+
+    :param session:
+        Сессия интернет соединения.
+    :param security:
+        Тикер ценной бумаги.
+    :param start:
+        Дата вида ГГГГ-ММ-ДД. При отсутствии данные будут загружены с начала истории.
+    :param end:
+        Дата вида ГГГГ-ММ-ДД. При отсутствии данные будут загружены до конца истории.
+    :param columns:
+        Кортеж столбцов, которые нужно загрузить - по умолчанию режим торгов, дата торгов, цена закрытия и объем в
+        штуках и стоимости. Если пустой или None, то загружаются все столбцы.
+    :param market:
+        Рынок - по умолчанию акции.
+    :param engine:
+        Движок - по умолчанию акции.
+
+    :return:
+        Список словарей, которые напрямую конвертируется в pandas.DataFrame.
+    """
+    url = f"https://iss.moex.com/iss/history/engines/{engine}/markets/{market}/securities/{security}.json"
+    table = "history"
+    query = _make_query(start=start, end=end, table=table, columns=columns)
+    return _get_long_data(session, url, table, query)
+
+
+def get_board_history(
+    session: requests.Session,
+    security: str,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    columns: Optional[Tuple[str, ...]] = (
+        "BOARDID",
+        "TRADEDATE",
+        "CLOSE",
+        "VOLUME",
+        "VALUE",
+    ),
+    board: str = "TQBR",
+    market: str = "shares",
+    engine: str = "stock",
+):
+    """Получить историю торгов для указанной бумаги в указанном режиме торгов за указанный интервал дат.
+
+    Описание запроса - https://iss.moex.com/iss/reference/65
+
+    :param session:
+        Сессия интернет соединения.
+    :param security:
+        Тикер ценной бумаги.
+    :param start:
+        Дата вида ГГГГ-ММ-ДД. При отсутствии данные будут загружены с начала истории.
+    :param end:
+        Дата вида ГГГГ-ММ-ДД. При отсутствии данные будут загружены до конца истории.
+    :param columns:
+        Кортеж столбцов, которые нужно загрузить - по умолчанию режим торгов, дата торгов, цена закрытия и объем в
+        штуках и стоимости. Если пустой или None, то загружаются все столбцы.
+    :param board:
+        Режим торгов - по умолчанию основной режим торгов T+2.
+    :param market:
+        Рынок - по умолчанию акции.
+    :param engine:
+        Движок - по умолчанию акции.
+
+    :return:
+        Список словарей, которые напрямую конвертируется в pandas.DataFrame.
+    """
+    url = (
+        f"https://iss.moex.com/iss/history/engines/{engine}/markets/{market}/"
+        f"boards/{board}/securities/{security}.json"
+    )
+    table = "history"
+    query = _make_query(start=start, end=end, table=table, columns=columns)
+    return _get_long_data(session, url, table, query)
+
+
+#modules/bd/db.py работа с БД
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import MetaData, Table, String, Integer, Column, Text, DateTime, Boolean
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import select
+import datetime
+
+Base = declarative_base()
+
+class Login_bd(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    user = Column(String(100), nullable=False)
+    password = Column(String(100), nullable=False)
+    def __repr__(self):
+        return f"<Customer(id={self.id}, user={self.user}, password={self.password})>"
+
+class Ticker_bd(Base):
+    __tablename__ = 'tickers'
+    id = Column(Integer, primary_key=True)
+    ticker = Column(String(100), nullable=False)
+    cost = Column(String, nullable=False)
+    last = Column(String, nullable=False)
+    def __repr__(self):
+        return f"<Customer(id={self.id}, ticker={self.ticker}, cost={self.cost}, last={self.last})>"
+
+class Portf_bd(Base):
+    __tablename__ = 'portf'
+    id = Column(Integer, primary_key=True)
+    user = Column(String, nullable=False)
+    portfs = Column(String, nullable=False)
+    weights = Column(String, nullable=False)
+    risk = Column(String, nullable=False)
+    doh = Column(String, nullable=False)
+    def __repr__(self):
+        return f"<Customer(id={self.id}, user={self.user}, portfs={self.portfs}, weights={self.weights})>"
+
+class BD:
+    def __init__(self):
+        global Base
+        self.engine = create_engine("postgresql://code:1eera4wDDDe@localhost/db")
+        Base.metadata.create_all(self.engine)
+        self.session = Session(bind=self.engine)
+
+    def login_infos(self):
+        session = self.session
+        customers = session.query(Login_bd).all()
+        session.close()
+        return customers
+
+    def create_user(self,USER,PWD):
+        session = self.session
+        new_customer = Login_bd(user=USER, password=PWD)
+        session.add(new_customer)
+        session.commit()
+        session.close()
+
+    def all_portf_get(self):
+        session = self.session
+        act = session.query(Portf_bd).all()
+        session.close()
+        return act
+
+    def portf_add(self, act: list, weights: list, USER, risk, doh):
+        session = self.session
+        act = " ".join(list(map(str,act)))
+        weights = " ".join(list(map(str, weights)))
+        new_customer = Portf_bd(user=USER, portfs=act, weights=weights, risk=risk, doh=doh)
+        session.add(new_customer)
+        session.commit()
+        session.close()
+
+    def all_act_get(self):
+        session = self.session
+        act = session.query(Ticker_bd).all()
+        session.close()
+        return act
+
+    def act_add(self, cost: list, ticker: str):
+        session = self.session
+        cost = " ".join(list(map(str, cost)))
+        now = datetime.datetime.now()
+        new_customer = Ticker_bd(ticker=ticker, cost=cost, last=now.strftime("%Y-%m-%d"))
+        session.add(new_customer)
+        session.commit()
+        session.close()
+
+    def act_upd(self,cost: list,ticker:str):
+        session = self.session
+        cost = " ".join(list(map(str, cost)))
+        act = select(Ticker_bd).where(Ticker_bd.c.ticker == ticker)
+        act.cost = cost
+        now = datetime.datetime.now()
+        act.date = now.strftime("%Y-%m-%d")
+        session.flush()
+        session.close()
+
