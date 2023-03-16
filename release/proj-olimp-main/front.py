@@ -9,7 +9,10 @@ authed = False
 login = ""
 
 with open("modules/state","r",encoding="utf-8-sig") as f:
-    if f.read() == "1": authed = True
+    if f.read() == "1":
+        authed = True
+        with open ("modules/login","r", encoding="utf-8-sig") as f2:
+            login = f2.read()
 def toggle_on():
     with open("modules/state", "w", encoding="utf-8-sig") as f: f.write("1")
 
@@ -44,6 +47,9 @@ if not authed:
             if DB.register(login,password1):
                 authed = True
                 toggle_on()
+                with open ("modules/login","w", encoding="utf-8-sig") as f2:
+
+                    f2.write(login)
                 st.success("Пользователь успешно зарегестрирован!", icon=None)
                 st.experimental_rerun()
             else: st.error("Ошибка регистрации", icon=None)
@@ -66,6 +72,9 @@ if not authed:
             if DB.check_login(login, pw):
                 authed = True
                 toggle_on()
+                with open ("modules/login","w", encoding="utf-8-sig") as f2:
+
+                    f2.write(login)
                 st.success("Вы вошли в систему!", icon=None)
                 st.experimental_rerun()
             else: st.error("Ошибка входа", icon=None)
